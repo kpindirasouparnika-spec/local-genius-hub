@@ -16,10 +16,13 @@ import {
   Send,
   Plug,
   Download,
-  AlertTriangle,
   CheckCircle2,
   XCircle,
   Loader2,
+  Radar,
+  Lock,
+  LogOut,
+  Sparkles,
 } from "lucide-react";
 import {
   callBridge,
@@ -33,22 +36,21 @@ export const Route = createFileRoute("/")({
   component: Home,
   head: () => ({
     meta: [
-      { title: "Local Agent — Computer Control" },
+      { title: "DataScout by AAGNEY" },
       {
         name: "description",
         content:
-          "Chat-based AI agent that controls your laptop's filesystem and shell via a local bridge.",
+          "DataScout by AAGNEY — your personal local AI agent. Control files and shell on your laptop with natural language.",
       },
     ],
   }),
 });
 
-const MESSAGES_KEY = "chat-messages";
+const MESSAGES_KEY = "datascout-messages";
+const AUTH_KEY = "datascout-auth";
+const PASSWORD = "123456789";
 
-const TOOL_META: Record<
-  string,
-  { icon: typeof Terminal; label: string; danger?: boolean }
-> = {
+const TOOL_META: Record<string, { icon: typeof Terminal; label: string; danger?: boolean }> = {
   list_dir: { icon: FolderOpen, label: "List directory" },
   read_file: { icon: FileText, label: "Read file" },
   write_file: { icon: Pencil, label: "Write file", danger: true },
@@ -57,31 +59,104 @@ const TOOL_META: Record<
 };
 
 function Home() {
-  const [bridge, setBridge] = useState<BridgeConfig | null>(null);
-  const [bridgeStatus, setBridgeStatus] = useState<"unknown" | "ok" | "fail">(
-    "unknown",
+  const [unlocked, setUnlocked] = useState(false);
+  const [authChecked, setAuthChecked] = useState(false);
+
+  useEffect(() => {
+    setUnlocked(sessionStorage.getItem(AUTH_KEY) === "1");
+    setAuthChecked(true);
+  }, []);
+
+  if (!authChecked) return null;
+  if (!unlocked)
+    return (
+      <LockScreen
+        onUnlock={() => {
+          sessionStorage.setItem(AUTH_KEY, "1");
+          setUnlocked(true);
+        }}
+      />
+    );
+  return <Panel onLogout={() => {
+    sessionStorage.removeItem(AUTH_KEY);
+    setUnlocked(false);
+  }} />;
+}
+
+function LockScreen({ onUnlock }: { onUnlock: () => void }) {
+  const [pw, setPw] = useState("");
+  const [err, setErr] = useState(false);
+
+  function submit(e: React.FormEvent) {
+    e.preventDefault();
+    if (pw === PASSWORD) onUnlock();
+    else {
+      setErr(true);
+      setPw("");
+    }
+  }
+
+  return (
+    <div
+      className="flex min-h-screen items-center justify-center px-4"
+      style={{ background: "var(--gradient-bg)" }}
+    >
+      <Card className="w-full max-w-md border-border/50 bg-card/60 p-8 backdrop-blur-xl" style={{ boxShadow: "var(--shadow-glow)" }}>
+        <div className="flex flex-col items-center text-center">
+          <div
+            className="flex h-14 w-14 items-center justify-center rounded-2xl"
+            style={{ background: "var(--gradient-brand)" }}
+          >
+            <Radar className="h-7 w-7 text-primary-foreground" />
+          </div>
+          <h1 className="mt-5 text-2xl font-bold tracking-tight">DataScout</h1>
+          <p className="text-xs uppercase tracking-[0.3em] text-muted-foreground">by AAGNEY</p>
+          <p className="mt-4 text-sm text-muted-foreground">
+            Enter the access password to continue.
+          </p>
+        </div>
+        <form onSubmit={submit} className="mt-6 space-y-3">
+          <div className="relative">
+            <Lock className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+            <Input
+              type="password"
+              autoFocus
+              placeholder="Password"
+              value={pw}
+              onChange={(e) => {
+                setPw(e.target.value);
+                setErr(false);
+              }}
+              className="h-11 pl-9"
+            />
+          </div>
+          {err && (
+            <p className="text-xs text-destructive">Incorrect password. Try again.</p>
+          )}
+          <Button type="submit" className="h-11 w-full font-semibold" disabled={!pw}>
+            Unlock Panel
+          </Button>
+        </form>
+      </Card>
+    </div>
   );
+}
+
+function Panel({ onLogout }: { onLogout: () => void }) {
+  const [bridge, setBridge] = useState<BridgeConfig | null>(null);
+  const [bridgeStatus, setBridgeStatus] = useState<"unknown" | "ok" | "fail">("unknown");
   const [initial, setInitial] = useState<UIMessage[]>([]);
   const [ready, setReady] = useState(false);
   const [input, setInput] = useState("");
   const bottomRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
-  const pendingApprovals = useRef<
-    Map<string, { resolve: (v: unknown) => void; reject: (e: Error) => void }>
-  >(new Map());
-  const [approvals, setApprovals] = useState<
-    Array<{ toolCallId: string; toolName: string; input: Record<string, unknown> }>
-  >([]);
 
-  // Bootstrap from localStorage once
   useEffect(() => {
     setBridge(loadBridge());
     try {
       const raw = localStorage.getItem(MESSAGES_KEY);
       if (raw) setInitial(JSON.parse(raw));
-    } catch {
-      /* ignore */
-    }
+    } catch { /* ignore */ }
     setReady(true);
   }, []);
 
@@ -92,14 +167,9 @@ function Home() {
     sendAutomaticallyWhen: ({ messages: msgs }) => {
       const last = msgs[msgs.length - 1];
       if (!last || last.role !== "assistant") return false;
-      // Auto-continue when all tool calls in the last assistant message have results
-      const toolParts = last.parts.filter((p) =>
-        p.type.startsWith("tool-"),
-      ) as Array<{ state: string }>;
+      const toolParts = last.parts.filter((p) => p.type.startsWith("tool-")) as Array<{ state: string }>;
       if (toolParts.length === 0) return false;
-      return toolParts.every(
-        (p) => p.state === "output-available" || p.state === "output-error",
-      );
+      return toolParts.every((p) => p.state === "output-available" || p.state === "output-error");
     },
     onToolCall: async ({ toolCall }) => {
       const cfg = loadBridge();
@@ -111,32 +181,10 @@ function Home() {
         });
         return;
       }
-      const meta = TOOL_META[toolCall.toolName];
-      const needsApproval = meta?.danger === true;
+      // Auto-approve all commands — execute immediately.
       try {
-        if (needsApproval) {
-          await new Promise((resolve, reject) => {
-            pendingApprovals.current.set(toolCall.toolCallId, { resolve, reject });
-            setApprovals((a) => [
-              ...a,
-              {
-                toolCallId: toolCall.toolCallId,
-                toolName: toolCall.toolName,
-                input: toolCall.input as Record<string, unknown>,
-              },
-            ]);
-          });
-        }
-        const result = await callBridge(
-          cfg,
-          toolCall.toolName,
-          toolCall.input as Record<string, unknown>,
-        );
-        addToolResult({
-          tool: toolCall.toolName as never,
-          toolCallId: toolCall.toolCallId,
-          output: result,
-        });
+        const result = await callBridge(cfg, toolCall.toolName, toolCall.input as Record<string, unknown>);
+        addToolResult({ tool: toolCall.toolName as never, toolCallId: toolCall.toolCallId, output: result });
       } catch (e) {
         addToolResult({
           tool: toolCall.toolName as never,
@@ -147,45 +195,19 @@ function Home() {
     },
   });
 
-  // Persist conversation
   useEffect(() => {
     if (!ready) return;
-    try {
-      localStorage.setItem(MESSAGES_KEY, JSON.stringify(messages));
-    } catch {
-      /* ignore */
-    }
+    try { localStorage.setItem(MESSAGES_KEY, JSON.stringify(messages)); } catch { /* ignore */ }
   }, [messages, ready]);
 
-  // Autoscroll + focus
-  useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages, status]);
-  useEffect(() => {
-    inputRef.current?.focus();
-  }, [status]);
+  useEffect(() => { bottomRef.current?.scrollIntoView({ behavior: "smooth" }); }, [messages, status]);
+  useEffect(() => { inputRef.current?.focus(); }, [status]);
 
   async function checkBridge(cfg: BridgeConfig) {
-    try {
-      await callBridge(cfg, "ping");
-      setBridgeStatus("ok");
-    } catch {
-      setBridgeStatus("fail");
-    }
+    try { await callBridge(cfg, "ping"); setBridgeStatus("ok"); }
+    catch { setBridgeStatus("fail"); }
   }
-
-  useEffect(() => {
-    if (bridge) checkBridge(bridge);
-  }, [bridge]);
-
-  function approve(id: string, ok: boolean) {
-    const p = pendingApprovals.current.get(id);
-    if (!p) return;
-    pendingApprovals.current.delete(id);
-    setApprovals((a) => a.filter((x) => x.toolCallId !== id));
-    if (ok) p.resolve(undefined);
-    else p.reject(new Error("Rejected by user"));
-  }
+  useEffect(() => { if (bridge) checkBridge(bridge); }, [bridge]);
 
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -201,22 +223,17 @@ function Home() {
   }
 
   return (
-    <div className="min-h-screen bg-background text-foreground">
+    <div className="min-h-screen text-foreground" style={{ background: "var(--gradient-bg)" }}>
       <div className="mx-auto flex h-screen max-w-5xl flex-col">
         <Header
           bridge={bridge}
           bridgeStatus={bridgeStatus}
           onBridgeChange={(c) => {
-            if (c) {
-              saveBridge(c);
-              setBridge(c);
-            } else {
-              clearBridge();
-              setBridge(null);
-              setBridgeStatus("unknown");
-            }
+            if (c) { saveBridge(c); setBridge(c); }
+            else { clearBridge(); setBridge(null); setBridgeStatus("unknown"); }
           }}
           onClearChat={clearChat}
+          onLogout={onLogout}
         />
 
         <main className="flex-1 overflow-y-auto px-4 py-6">
@@ -224,14 +241,11 @@ function Home() {
             <EmptyState />
           ) : (
             <div className="space-y-6">
-              {messages.map((m) => (
-                <MessageView key={m.id} message={m} />
-              ))}
+              {messages.map((m) => <MessageView key={m.id} message={m} />)}
               {(status === "submitted" || status === "streaming") &&
                 messages[messages.length - 1]?.role === "user" && (
                   <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                    Thinking…
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" /> Scouting…
                   </div>
                 )}
             </div>
@@ -239,19 +253,11 @@ function Home() {
           <div ref={bottomRef} />
         </main>
 
-        {approvals.length > 0 && (
-          <div className="border-t border-destructive/40 bg-destructive/10 px-4 py-3">
-            {approvals.map((a) => (
-              <ApprovalCard key={a.toolCallId} {...a} onDecide={approve} />
-            ))}
-          </div>
-        )}
-
         <form
           onSubmit={handleSubmit}
-          className="border-t border-border bg-card px-4 py-3"
+          className="border-t border-border/60 bg-card/60 px-4 py-3 backdrop-blur-xl"
         >
-          <div className="flex items-end gap-2">
+          <div className="mx-auto flex max-w-3xl items-end gap-2">
             <Textarea
               ref={inputRef}
               value={input}
@@ -264,20 +270,25 @@ function Home() {
               }}
               placeholder={
                 bridgeStatus === "ok"
-                  ? "Ask the agent to do something on your laptop…"
-                  : "Connect the bridge agent first, then ask anything…"
+                  ? "Ask DataScout to do something on your laptop…"
+                  : "Connect the bridge agent, then ask anything…"
               }
-              className="min-h-[44px] max-h-32 resize-none"
+              className="min-h-[48px] max-h-32 resize-none rounded-xl border-border/60 bg-background/50"
               rows={1}
             />
             <Button
               type="submit"
               size="icon"
+              className="h-12 w-12 rounded-xl"
+              style={{ background: "var(--gradient-brand)" }}
               disabled={!input.trim() || status === "streaming" || status === "submitted"}
             >
               <Send className="h-4 w-4" />
             </Button>
           </div>
+          <p className="mx-auto mt-2 max-w-3xl text-center text-[10px] text-muted-foreground">
+            Auto-approve is ON · all commands execute instantly on your machine
+          </p>
         </form>
       </div>
     </div>
@@ -285,19 +296,17 @@ function Home() {
 }
 
 function Header({
-  bridge,
-  bridgeStatus,
-  onBridgeChange,
-  onClearChat,
+  bridge, bridgeStatus, onBridgeChange, onClearChat, onLogout,
 }: {
   bridge: BridgeConfig | null;
   bridgeStatus: "unknown" | "ok" | "fail";
   onBridgeChange: (c: BridgeConfig | null) => void;
   onClearChat: () => void;
+  onLogout: () => void;
 }) {
   const [open, setOpen] = useState(!bridge);
   const [url, setUrl] = useState(bridge?.url ?? "http://localhost:7777");
-  const [token, setToken] = useState(bridge?.token ?? "");
+  const [token, setToken] = useState(bridge?.token ?? "123456789");
 
   function downloadBridge() {
     fetch("/bridge-agent.zip")
@@ -312,71 +321,54 @@ function Header({
   }
 
   return (
-    <header className="border-b border-border bg-card">
+    <header className="border-b border-border/60 bg-card/40 backdrop-blur-xl">
       <div className="flex items-center justify-between px-4 py-3">
-        <div className="flex items-center gap-2">
-          <Terminal className="h-5 w-5 text-primary" />
-          <h1 className="text-base font-semibold">Local Agent</h1>
+        <div className="flex items-center gap-3">
+          <div
+            className="flex h-9 w-9 items-center justify-center rounded-lg"
+            style={{ background: "var(--gradient-brand)" }}
+          >
+            <Radar className="h-5 w-5 text-primary-foreground" />
+          </div>
+          <div className="leading-tight">
+            <h1 className="text-sm font-bold tracking-tight">DataScout</h1>
+            <p className="text-[10px] uppercase tracking-[0.25em] text-muted-foreground">by AAGNEY</p>
+          </div>
           <BridgeBadge status={bridgeStatus} />
         </div>
-        <div className="flex items-center gap-2">
-          <Button variant="ghost" size="sm" onClick={onClearChat}>
-            Clear
-          </Button>
+        <div className="flex items-center gap-1.5">
+          <Button variant="ghost" size="sm" onClick={onClearChat}>Clear</Button>
           <Button variant="outline" size="sm" onClick={() => setOpen((o) => !o)}>
             <Plug className="mr-1 h-3.5 w-3.5" />
             {bridge ? "Bridge" : "Connect"}
           </Button>
+          <Button variant="ghost" size="icon" onClick={onLogout} title="Lock panel">
+            <LogOut className="h-4 w-4" />
+          </Button>
         </div>
       </div>
       {open && (
-        <div className="space-y-3 border-t border-border bg-muted/30 px-4 py-4">
-          <div className="flex items-start gap-2 text-sm">
-            <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-yellow-600" />
-            <p className="text-muted-foreground">
-              Download and run the bridge agent on your laptop, then paste its URL and token here.
-              Everything stays on your machine.
-            </p>
-          </div>
+        <div className="space-y-3 border-t border-border/60 bg-background/30 px-4 py-4">
+          <p className="text-xs text-muted-foreground">
+            Run the bridge agent locally, then paste the URL & token. Default token: <code className="rounded bg-muted px-1.5 py-0.5 font-mono">123456789</code>
+          </p>
           <Button variant="secondary" size="sm" onClick={downloadBridge}>
             <Download className="mr-1 h-3.5 w-3.5" />
             Download bridge-agent.zip
           </Button>
-          <div className="rounded-md bg-background p-3 font-mono text-xs">
-            <div>$ unzip bridge-agent.zip && cd bridge-agent</div>
-            <div>$ node bridge.mjs</div>
+          <div className="rounded-lg border border-border/60 bg-background/60 p-3 font-mono text-xs">
+            <div className="text-muted-foreground">$ unzip bridge-agent.zip && cd bridge-agent</div>
+            <div className="text-primary">$ node bridge.mjs</div>
           </div>
           <div className="grid gap-2 sm:grid-cols-[1fr_1fr_auto]">
-            <Input
-              placeholder="http://localhost:7777"
-              value={url}
-              onChange={(e) => setUrl(e.target.value)}
-            />
-            <Input
-              placeholder="Token from console"
-              value={token}
-              onChange={(e) => setToken(e.target.value)}
-            />
+            <Input placeholder="http://localhost:7777" value={url} onChange={(e) => setUrl(e.target.value)} />
+            <Input placeholder="Token" value={token} onChange={(e) => setToken(e.target.value)} />
             <div className="flex gap-2">
-              <Button
-                size="sm"
-                onClick={() => {
-                  onBridgeChange({ url: url.trim(), token: token.trim() });
-                  setOpen(false);
-                }}
-                disabled={!url.trim() || !token.trim()}
-              >
+              <Button size="sm" onClick={() => { onBridgeChange({ url: url.trim(), token: token.trim() }); setOpen(false); }} disabled={!url.trim() || !token.trim()}>
                 Connect
               </Button>
               {bridge && (
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  onClick={() => {
-                    onBridgeChange(null);
-                    setOpen(true);
-                  }}
-                >
+                <Button size="sm" variant="ghost" onClick={() => { onBridgeChange(null); setOpen(true); }}>
                   Disconnect
                 </Button>
               )}
@@ -391,43 +383,44 @@ function Header({
 function BridgeBadge({ status }: { status: "unknown" | "ok" | "fail" }) {
   if (status === "ok")
     return (
-      <Badge variant="secondary" className="gap-1 bg-green-500/15 text-green-700 dark:text-green-400">
-        <CheckCircle2 className="h-3 w-3" />
-        Bridge connected
+      <Badge variant="secondary" className="gap-1 border-primary/30 bg-primary/10 text-primary">
+        <CheckCircle2 className="h-3 w-3" /> Online
       </Badge>
     );
   if (status === "fail")
     return (
       <Badge variant="destructive" className="gap-1">
-        <XCircle className="h-3 w-3" />
-        Bridge unreachable
+        <XCircle className="h-3 w-3" /> Offline
       </Badge>
     );
   return (
-    <Badge variant="outline" className="gap-1">
-      <XCircle className="h-3 w-3" />
-      No bridge
+    <Badge variant="outline" className="gap-1 text-muted-foreground">
+      <XCircle className="h-3 w-3" /> No bridge
     </Badge>
   );
 }
 
 function EmptyState() {
   return (
-    <div className="mx-auto mt-16 max-w-xl text-center">
-      <Terminal className="mx-auto h-10 w-10 text-primary" />
-      <h2 className="mt-4 text-2xl font-semibold">Your local computer agent</h2>
-      <p className="mt-2 text-muted-foreground">
-        Connect the bridge agent on your laptop and ask the AI to browse files, edit them, search
-        your code, or run shell commands. You approve every command before it runs.
+    <div className="mx-auto mt-12 max-w-2xl text-center">
+      <div
+        className="mx-auto flex h-16 w-16 items-center justify-center rounded-2xl"
+        style={{ background: "var(--gradient-brand)", boxShadow: "var(--shadow-glow)" }}
+      >
+        <Sparkles className="h-8 w-8 text-primary-foreground" />
+      </div>
+      <h2 className="mt-6 text-3xl font-bold tracking-tight">Welcome to DataScout</h2>
+      <p className="mt-3 text-muted-foreground">
+        Your personal AI agent with full access to your laptop. Just ask — files, code, shell, all yours.
       </p>
-      <div className="mt-6 grid gap-2 text-left text-sm">
+      <div className="mt-8 grid gap-2 text-left text-sm sm:grid-cols-2">
         {[
           "List the files in ~/Downloads",
           "Find every TODO in this folder",
           "Create a python script that prints today's date",
           "Show me what's using port 3000",
         ].map((s) => (
-          <Card key={s} className="px-3 py-2 text-muted-foreground">
+          <Card key={s} className="border-border/50 bg-card/40 px-4 py-3 text-muted-foreground transition hover:border-primary/40 hover:text-foreground">
             {s}
           </Card>
         ))}
@@ -452,9 +445,10 @@ function MessageView({ message }: { message: UIMessage }) {
       <div
         className={
           isUser
-            ? "max-w-[80%] rounded-2xl bg-primary px-4 py-2 text-primary-foreground"
+            ? "max-w-[80%] rounded-2xl px-4 py-2.5 text-primary-foreground shadow-lg"
             : "max-w-[90%] space-y-3"
         }
+        style={isUser ? { background: "var(--gradient-brand)" } : undefined}
       >
         {message.parts.map((part, i) => {
           if (part.type === "text") {
@@ -484,32 +478,24 @@ function ToolView({ part }: { part: ToolPart }) {
   const statusLabel =
     state === "input-streaming" || state === "input-available"
       ? "Running…"
-      : state === "output-available"
-        ? "Done"
-        : state === "output-error"
-          ? "Error"
-          : state || "";
+      : state === "output-available" ? "Done"
+      : state === "output-error" ? "Error"
+      : state || "";
 
   return (
-    <Card className="overflow-hidden">
+    <Card className="overflow-hidden border-border/60 bg-card/60 backdrop-blur">
       <button
         type="button"
         onClick={() => setOpen((o) => !o)}
         className="flex w-full items-center justify-between gap-2 px-3 py-2 text-left hover:bg-muted/50"
       >
         <div className="flex items-center gap-2">
-          <Icon
-            className={`h-4 w-4 ${meta.danger ? "text-destructive" : "text-primary"}`}
-          />
+          <Icon className={`h-4 w-4 ${meta.danger ? "text-accent" : "text-primary"}`} />
           <span className="text-sm font-medium">{meta.label}</span>
           {part.input?.path ? (
-            <span className="font-mono text-xs text-muted-foreground">
-              {String(part.input.path)}
-            </span>
+            <span className="font-mono text-xs text-muted-foreground">{String(part.input.path)}</span>
           ) : part.input?.command ? (
-            <span className="font-mono text-xs text-muted-foreground">
-              {String(part.input.command).slice(0, 60)}
-            </span>
+            <span className="font-mono text-xs text-muted-foreground">{String(part.input.command).slice(0, 60)}</span>
           ) : null}
         </div>
         <Badge variant="outline" className="text-[10px]">
@@ -520,11 +506,11 @@ function ToolView({ part }: { part: ToolPart }) {
         </Badge>
       </button>
       {open && (
-        <div className="space-y-2 border-t border-border bg-muted/30 px-3 py-2 text-xs">
+        <div className="space-y-2 border-t border-border/60 bg-background/30 px-3 py-2 text-xs">
           {part.input && (
             <div>
               <div className="mb-1 font-semibold text-muted-foreground">Input</div>
-              <pre className="overflow-x-auto rounded bg-background p-2 font-mono">
+              <pre className="overflow-x-auto rounded bg-background/60 p-2 font-mono">
                 {JSON.stringify(part.input, null, 2)}
               </pre>
             </div>
@@ -532,56 +518,14 @@ function ToolView({ part }: { part: ToolPart }) {
           {part.output !== undefined && (
             <div>
               <div className="mb-1 font-semibold text-muted-foreground">Output</div>
-              <pre className="max-h-64 overflow-auto rounded bg-background p-2 font-mono">
-                {typeof part.output === "string"
-                  ? part.output
-                  : JSON.stringify(part.output, null, 2)}
+              <pre className="max-h-64 overflow-auto rounded bg-background/60 p-2 font-mono">
+                {typeof part.output === "string" ? part.output : JSON.stringify(part.output, null, 2)}
               </pre>
             </div>
           )}
-          {part.errorText && (
-            <div className="text-destructive">{part.errorText}</div>
-          )}
+          {part.errorText && <div className="text-destructive">{part.errorText}</div>}
         </div>
       )}
-    </Card>
-  );
-}
-
-function ApprovalCard({
-  toolCallId,
-  toolName,
-  input,
-  onDecide,
-}: {
-  toolCallId: string;
-  toolName: string;
-  input: Record<string, unknown>;
-  onDecide: (id: string, ok: boolean) => void;
-}) {
-  const meta = TOOL_META[toolName] || { icon: Terminal, label: toolName };
-  const Icon = meta.icon;
-  return (
-    <Card className="mb-2 border-destructive/40 bg-card p-3">
-      <div className="flex items-start justify-between gap-3">
-        <div className="flex-1">
-          <div className="flex items-center gap-2 text-sm font-semibold">
-            <Icon className="h-4 w-4 text-destructive" />
-            Approve {meta.label}?
-          </div>
-          <pre className="mt-2 max-h-32 overflow-auto rounded bg-muted p-2 text-xs font-mono">
-            {JSON.stringify(input, null, 2)}
-          </pre>
-        </div>
-        <div className="flex flex-col gap-2">
-          <Button size="sm" onClick={() => onDecide(toolCallId, true)}>
-            Approve
-          </Button>
-          <Button size="sm" variant="outline" onClick={() => onDecide(toolCallId, false)}>
-            Reject
-          </Button>
-        </div>
-      </div>
     </Card>
   );
 }
