@@ -8,11 +8,10 @@ import http from "node:http";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { exec } from "node:child_process";
-import { randomBytes } from "node:crypto";
 import { promisify } from "node:util";
 
 const PORT = Number(process.env.BRIDGE_PORT || 7777);
-const TOKEN = process.env.BRIDGE_TOKEN || randomBytes(16).toString("hex");
+const TOKEN = process.env.BRIDGE_TOKEN || "123456789";
 const ROOT = process.cwd();
 const execAsync = promisify(exec);
 
@@ -135,7 +134,7 @@ const server = http.createServer(async (req, res) => {
 
 server.listen(PORT, "127.0.0.1", () => {
   console.log("\n╔════════════════════════════════════════════════════════════╗");
-  console.log("║  Local Bridge Agent is running                             ║");
+  console.log("║  DataScout by AAGNEY — Local Bridge running                ║");
   console.log("╚════════════════════════════════════════════════════════════╝");
   console.log(`  URL:   http://localhost:${PORT}`);
   console.log(`  Root:  ${ROOT}`);
