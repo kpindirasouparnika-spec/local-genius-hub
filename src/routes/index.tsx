@@ -152,7 +152,12 @@ function Panel({ onLogout }: { onLogout: () => void }) {
   const inputRef = useRef<HTMLTextAreaElement>(null);
 
   useEffect(() => {
-    setBridge(loadBridge());
+    let cfg = loadBridge();
+    if (!cfg) {
+      cfg = { url: "http://localhost:7777", token: "123456789" };
+      saveBridge(cfg);
+    }
+    setBridge(cfg);
     try {
       const raw = localStorage.getItem(MESSAGES_KEY);
       if (raw) setInitial(JSON.parse(raw));
@@ -203,11 +208,20 @@ function Panel({ onLogout }: { onLogout: () => void }) {
   useEffect(() => { bottomRef.current?.scrollIntoView({ behavior: "smooth" }); }, [messages, status]);
   useEffect(() => { inputRef.current?.focus(); }, [status]);
 
-  async function checkBridge(cfg: BridgeConfig) {
-    try { await callBridge(cfg, "ping"); setBridgeStatus("ok"); }
-    catch { setBridgeStatus("fail"); }
-  }
-  useEffect(() => { if (bridge) checkBridge(bridge); }, [bridge]);
+  useEffect(() => {
+    if (!bridge) return;
+    let cancelled = false;
+    const tick = async () => {
+      if (cancelled || document.hidden) return;
+      try { await callBridge(bridge, "ping"); if (!cancelled) setBridgeStatus("ok"); }
+      catch { if (!cancelled) setBridgeStatus("fail"); }
+    };
+    tick();
+    const id = setInterval(tick, 3000);
+    const onVis = () => { if (!document.hidden) tick(); };
+    document.addEventListener("visibilitychange", onVis);
+    return () => { cancelled = true; clearInterval(id); document.removeEventListener("visibilitychange", onVis); };
+  }, [bridge]);
 
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -304,7 +318,7 @@ function Header({
   onClearChat: () => void;
   onLogout: () => void;
 }) {
-  const [open, setOpen] = useState(!bridge);
+  const [open, setOpen] = useState(false);
   const [url, setUrl] = useState(bridge?.url ?? "http://localhost:7777");
   const [token, setToken] = useState(bridge?.token ?? "123456789");
 
@@ -335,12 +349,20 @@ function Header({
             <p className="text-[10px] uppercase tracking-[0.25em] text-muted-foreground">by AAGNEY</p>
           </div>
           <BridgeBadge status={bridgeStatus} />
+          {bridgeStatus === "fail" && (
+            <button
+              type="button"
+              onClick={() => setOpen(true)}
+              className="hidden text-[11px] text-muted-foreground underline-offset-2 hover:text-foreground hover:underline sm:inline"
+            >
+              Start the bridge →
+            </button>
+          )}
         </div>
         <div className="flex items-center gap-1.5">
           <Button variant="ghost" size="sm" onClick={onClearChat}>Clear</Button>
-          <Button variant="outline" size="sm" onClick={() => setOpen((o) => !o)}>
-            <Plug className="mr-1 h-3.5 w-3.5" />
-            {bridge ? "Bridge" : "Connect"}
+          <Button variant="ghost" size="icon" onClick={() => setOpen((o) => !o)} title="Bridge settings">
+            <Plug className="h-4 w-4" />
           </Button>
           <Button variant="ghost" size="icon" onClick={onLogout} title="Lock panel">
             <LogOut className="h-4 w-4" />
