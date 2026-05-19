@@ -318,7 +318,7 @@ function Header({
   onClearChat: () => void;
   onLogout: () => void;
 }) {
-  const [open, setOpen] = useState(!bridge);
+  const [open, setOpen] = useState(false);
   const [url, setUrl] = useState(bridge?.url ?? "http://localhost:7777");
   const [token, setToken] = useState(bridge?.token ?? "123456789");
 
