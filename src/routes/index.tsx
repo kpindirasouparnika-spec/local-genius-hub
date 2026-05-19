@@ -152,7 +152,12 @@ function Panel({ onLogout }: { onLogout: () => void }) {
   const inputRef = useRef<HTMLTextAreaElement>(null);
 
   useEffect(() => {
-    setBridge(loadBridge());
+    let cfg = loadBridge();
+    if (!cfg) {
+      cfg = { url: "http://localhost:7777", token: "123456789" };
+      saveBridge(cfg);
+    }
+    setBridge(cfg);
     try {
       const raw = localStorage.getItem(MESSAGES_KEY);
       if (raw) setInitial(JSON.parse(raw));
