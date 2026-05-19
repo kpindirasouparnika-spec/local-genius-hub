@@ -113,13 +113,19 @@ const handlers = {
 const server = http.createServer(async (req, res) => {
   if (req.method === "OPTIONS") return json(res, 204, {});
 
+  const url = new URL(req.url, `http://localhost:${PORT}`);
+  const action = url.pathname.replace(/^\//, "") || "ping";
+
+  // Unauthenticated lightweight health check — used by the web panel to flip Online.
+  if (req.method === "GET" && action === "ping") {
+    return json(res, 200, { ok: true, root: ROOT, platform: process.platform });
+  }
+
   const auth = req.headers["authorization"] || "";
   if (auth !== `Bearer ${TOKEN}`) {
     return json(res, 401, { error: "Unauthorized. Paste the token from the bridge console." });
   }
 
-  const url = new URL(req.url, `http://localhost:${PORT}`);
-  const action = url.pathname.replace(/^\//, "") || "ping";
   const handler = handlers[action];
   if (!handler) return json(res, 404, { error: `Unknown action: ${action}` });
 
@@ -132,7 +138,10 @@ const server = http.createServer(async (req, res) => {
   }
 });
 
-server.listen(PORT, "127.0.0.1", () => {
+// Bind to all interfaces so both IPv4 (127.0.0.1) and IPv6 (::1) "localhost"
+// resolution work on Windows / macOS / Linux. Without this, Windows often
+// resolves localhost -> ::1 and refuses the connection if we only listen on 127.0.0.1.
+server.listen(PORT, () => {
   console.log("\n╔════════════════════════════════════════════════════════════╗");
   console.log("║  DataScout by AAGNEY — Local Bridge running                ║");
   console.log("╚════════════════════════════════════════════════════════════╝");
