@@ -208,11 +208,20 @@ function Panel({ onLogout }: { onLogout: () => void }) {
   useEffect(() => { bottomRef.current?.scrollIntoView({ behavior: "smooth" }); }, [messages, status]);
   useEffect(() => { inputRef.current?.focus(); }, [status]);
 
-  async function checkBridge(cfg: BridgeConfig) {
-    try { await callBridge(cfg, "ping"); setBridgeStatus("ok"); }
-    catch { setBridgeStatus("fail"); }
-  }
-  useEffect(() => { if (bridge) checkBridge(bridge); }, [bridge]);
+  useEffect(() => {
+    if (!bridge) return;
+    let cancelled = false;
+    const tick = async () => {
+      if (cancelled || document.hidden) return;
+      try { await callBridge(bridge, "ping"); if (!cancelled) setBridgeStatus("ok"); }
+      catch { if (!cancelled) setBridgeStatus("fail"); }
+    };
+    tick();
+    const id = setInterval(tick, 3000);
+    const onVis = () => { if (!document.hidden) tick(); };
+    document.addEventListener("visibilitychange", onVis);
+    return () => { cancelled = true; clearInterval(id); document.removeEventListener("visibilitychange", onVis); };
+  }, [bridge]);
 
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
