@@ -349,12 +349,20 @@ function Header({
             <p className="text-[10px] uppercase tracking-[0.25em] text-muted-foreground">by AAGNEY</p>
           </div>
           <BridgeBadge status={bridgeStatus} />
+          {bridgeStatus === "fail" && (
+            <button
+              type="button"
+              onClick={() => setOpen(true)}
+              className="hidden text-[11px] text-muted-foreground underline-offset-2 hover:text-foreground hover:underline sm:inline"
+            >
+              Start the bridge →
+            </button>
+          )}
         </div>
         <div className="flex items-center gap-1.5">
           <Button variant="ghost" size="sm" onClick={onClearChat}>Clear</Button>
-          <Button variant="outline" size="sm" onClick={() => setOpen((o) => !o)}>
-            <Plug className="mr-1 h-3.5 w-3.5" />
-            {bridge ? "Bridge" : "Connect"}
+          <Button variant="ghost" size="icon" onClick={() => setOpen((o) => !o)} title="Bridge settings">
+            <Plug className="h-4 w-4" />
           </Button>
           <Button variant="ghost" size="icon" onClick={onLogout} title="Lock panel">
             <LogOut className="h-4 w-4" />
