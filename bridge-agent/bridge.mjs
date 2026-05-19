@@ -139,5 +139,5 @@ server.listen(PORT, "127.0.0.1", () => {
   console.log(`  URL:   http://localhost:${PORT}`);
   console.log(`  Root:  ${ROOT}`);
   console.log(`  Token: ${TOKEN}`);
-  console.log("\n  Paste the URL and Token into the web UI to connect.\n");
+  console.log("\n  Web panel will auto-connect — keep this terminal open.\n");
 });
