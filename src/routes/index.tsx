@@ -213,8 +213,13 @@ function Panel({ onLogout }: { onLogout: () => void }) {
     let cancelled = false;
     const tick = async () => {
       if (cancelled || document.hidden) return;
-      try { await callBridge(bridge, "ping"); if (!cancelled) setBridgeStatus("ok"); }
-      catch { if (!cancelled) setBridgeStatus("fail"); }
+      try {
+        // Simple GET avoids CORS preflight and works even before token is set.
+        const res = await fetch(bridge.url.replace(/\/$/, "") + "/ping", { method: "GET" });
+        if (!cancelled) setBridgeStatus(res.ok ? "ok" : "fail");
+      } catch {
+        if (!cancelled) setBridgeStatus("fail");
+      }
     };
     tick();
     const id = setInterval(tick, 3000);
