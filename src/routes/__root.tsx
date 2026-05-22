@@ -76,9 +76,13 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
       { name: "description", content: "DataScout by AAGNEY — personal local AI agent for your laptop." },
       { name: "author", content: "AAGNEY" },
       { property: "og:title", content: "DataScout by AAGNEY" },
-      { property: "og:description", content: "Personal local AI agent that controls your laptop." },
+      { property: "og:description", content: "DataScout by AAGNEY — personal local AI agent for your laptop." },
       { property: "og:type", content: "website" },
       { name: "twitter:card", content: "summary" },
+      { name: "twitter:title", content: "DataScout by AAGNEY" },
+      { name: "twitter:description", content: "DataScout by AAGNEY — personal local AI agent for your laptop." },
+      { property: "og:image", content: "https://pub-bb2e103a32db4e198524a2e9ed8f35b4.r2.dev/9f7ed77e-f725-4c31-9b67-93cce82923d6/id-preview-e28a5807--95b4817b-5ad4-452c-bc8d-e1cfd71904a9.lovable.app-1779175213587.png" },
+      { name: "twitter:image", content: "https://pub-bb2e103a32db4e198524a2e9ed8f35b4.r2.dev/9f7ed77e-f725-4c31-9b67-93cce82923d6/id-preview-e28a5807--95b4817b-5ad4-452c-bc8d-e1cfd71904a9.lovable.app-1779175213587.png" },
     ],
     links: [
       {
